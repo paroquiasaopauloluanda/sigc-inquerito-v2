@@ -203,7 +203,7 @@ export function PaginaAdmin() {
           centros={centros}
           faixas={faixas}
           mostrarFiltroCentro={false}
-          mostrarAbaCatequista={true}
+          
         />
       )}
 

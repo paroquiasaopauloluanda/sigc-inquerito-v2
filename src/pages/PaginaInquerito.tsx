@@ -8,11 +8,11 @@ import { getPerguntasParaCentro } from '../lib/stats'
 import { ETAPAS, NOME_SISTEMA, ANO_CATEQUETICO } from '../lib/config'
 import { Btn, ProgressBar, Estrelas, OpcaoCard, Spinner } from '../components/ui'
 
-type Estado = 'verificando' | 'intro' | 'identificacao' | 'questionario' | 'submitting' | 'sucesso' | 'ja-submeteu' | 'erro'
+type Estado = 'verificando' | 'intro' | 'identificacao' | 'questionario' | 'sucesso' | 'ja-submeteu' | 'erro'
 
 interface Identificacao {
   centro_id: string
-  catequista_id: string
+  catequistas_ids: string[]
   etapa: string
   faixa_etaria_id: string
 }
@@ -26,8 +26,9 @@ export function PaginaInquerito() {
   const [seccoes, setSeccoes] = useState<Seccao[]>([])
   const [perguntas, setPerguntas] = useState<Pergunta[]>([])
   const [desactivadas, setDesactivadas] = useState<PerguntaDesactivada[]>([])
+  const [searchCat, setSearchCat] = useState('')
 
-  const [ident, setIdent] = useState<Partial<Identificacao>>({})
+  const [ident, setIdent] = useState<Partial<Identificacao>>({ catequistas_ids: [] })
   const [respostas, setRespostas] = useState<Record<string, string>>({})
   const [seccaoIdx, setSeccaoIdx] = useState(0)
   const [errMsg, setErrMsg] = useState('')
@@ -54,7 +55,7 @@ export function PaginaInquerito() {
 
   const cataquistasDocentro = catequistas.filter(c =>
     ident.centro_id && c.centros_ids.includes(ident.centro_id)
-  )
+  ).filter(c => !searchCat || c.nome.toLowerCase().includes(searchCat.toLowerCase()))
 
   const seccoesComPerguntas = ident.centro_id
     ? getPerguntasParaCentro(
@@ -63,7 +64,7 @@ export function PaginaInquerito() {
       )
     : []
 
-  const identCompleto = !!(ident.centro_id && ident.catequista_id && ident.etapa && ident.faixa_etaria_id)
+  const identCompleto = !!(ident.centro_id && (ident.catequistas_ids?.length ?? 0) > 0 && ident.etapa && ident.faixa_etaria_id)
 
   function responder(pid: string, val: string) {
     setRespostas(prev => ({ ...prev, [pid]: val }))
@@ -85,7 +86,7 @@ export function PaginaInquerito() {
     try {
       await submeterResposta({
         centro_id: ident.centro_id!,
-        catequista_id: ident.catequista_id!,
+        catequistas_ids: ident.catequistas_ids!,
         etapa: ident.etapa!,
         faixa_etaria_id: ident.faixa_etaria_id!,
         respostas,
@@ -185,27 +186,50 @@ export function PaginaInquerito() {
             {centros.map(c => (
               <RadioItem key={c.id} label={c.nome} subtitle={c.descricao}
                 selected={ident.centro_id === c.id}
-                onClick={() => setIdent(prev => ({ ...prev, centro_id: c.id, catequista_id: '' }))}
+                onClick={() => { setIdent(prev => ({ ...prev, centro_id: c.id, catequistas_ids: [] })); setSearchCat('') }}
               />
             ))}
             {centros.length === 0 && <p style={{ fontSize: '0.85rem', color: 'var(--gray-400)', padding: 8 }}>Nenhum centro disponível.</p>}
           </div>
 
-          {/* Catequista */}
+          {/* Catequistas — multi-selecção com pesquisa */}
           {ident.centro_id && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} className="fade-in">
               <span style={{ fontSize: '0.93rem', fontWeight: 600, color: 'var(--gray-700)' }}>
-                O teu catequista<span style={{ color: '#dc2626', marginLeft: 2 }}>*</span>
+                Os teus catequistas<span style={{ color: '#dc2626', marginLeft: 2 }}>*</span>
               </span>
-              {cataquistasDocentro.map(c => (
-                <RadioItem key={c.id} label={c.nome}
-                  selected={ident.catequista_id === c.id}
-                  onClick={() => setIdent(prev => ({ ...prev, catequista_id: c.id }))}
-                />
-              ))}
+              <p style={{ fontSize: '0.8rem', color: 'var(--gray-400)', margin: 0 }}>
+                Podes seleccionar mais de um catequista se a tua turma tiver vários.
+              </p>
+              <input
+                value={searchCat} onChange={e => setSearchCat(e.target.value)}
+                placeholder="🔍 Pesquisar catequista…"
+                style={{ padding: '9px 12px', borderRadius: 10, border: '1.5px solid var(--gray-200)', fontFamily: 'inherit', fontSize: '0.9rem', outline: 'none' }}
+              />
+              {cataquistasDocentro.map(c => {
+                const sel = (ident.catequistas_ids ?? []).includes(c.id)
+                return (
+                  <button key={c.id} onClick={() => {
+                    const ids = ident.catequistas_ids ?? []
+                    setIdent(prev => ({ ...prev, catequistas_ids: sel ? ids.filter(x => x !== c.id) : [...ids, c.id] }))
+                  }}
+                    style={{
+                      padding: '12px 14px', borderRadius: 11, textAlign: 'left', cursor: 'pointer', width: '100%',
+                      border: `2px solid ${sel ? 'var(--purple-600)' : 'var(--gray-200)'}`,
+                      background: sel ? 'var(--purple-50)' : '#fff',
+                      display: 'flex', alignItems: 'center', gap: 12, transition: 'all .18s',
+                    }}
+                  >
+                    <span style={{ width: 20, height: 20, borderRadius: 4, flexShrink: 0, border: `2px solid ${sel ? 'var(--purple-600)' : 'var(--gray-300)'}`, background: sel ? 'var(--purple-600)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {sel && <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>✓</span>}
+                    </span>
+                    <span style={{ fontSize: '0.93rem', fontWeight: sel ? 600 : 400, color: sel ? 'var(--purple-800)' : 'var(--gray-700)' }}>{c.nome}</span>
+                  </button>
+                )
+              })}
               {cataquistasDocentro.length === 0 && (
                 <p style={{ fontSize: '0.85rem', color: 'var(--gray-400)', padding: 8 }}>
-                  Nenhum catequista registado neste centro.
+                  {searchCat ? 'Nenhum catequista encontrado.' : 'Nenhum catequista registado neste centro.'}
                 </p>
               )}
             </div>
@@ -278,6 +302,11 @@ export function PaginaInquerito() {
             <h2 style={{ fontSize: '1.2rem', fontWeight: 700 }}>
               {seccoesComPerguntas[seccaoIdx].seccao.titulo}
             </h2>
+            {seccoesComPerguntas[seccaoIdx].seccao.subtitulo && (
+              <p style={{ fontSize: '0.85rem', color: 'var(--gray-500)', marginTop: 4, lineHeight: 1.6 }}>
+                {seccoesComPerguntas[seccaoIdx].seccao.subtitulo}
+              </p>
+            )}
           </div>
 
           {seccoesComPerguntas[seccaoIdx].perguntas.map(p => (
@@ -332,7 +361,7 @@ function PerguntaRender({ pergunta: p, valor, onChange }: { pergunta: Pergunta; 
           </span>
           <textarea
             value={valor} onChange={e => onChange(e.target.value)}
-            rows={4} placeholder={p.obrigatoria ? 'Escreve aqui a tua resposta…' : 'Opcional…'}
+            rows={4} placeholder={p.placeholder || (p.obrigatoria ? 'Escreve aqui a tua resposta…' : 'Opcional…')}
             style={{
               padding: '11px 13px', borderRadius: 10, fontFamily: 'inherit',
               border: `1.5px solid ${faltaMin ? '#fca5a5' : 'var(--gray-200)'}`,

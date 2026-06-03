@@ -20,17 +20,29 @@ export const TIPO_PERGUNTA_LABEL: Record<string, string> = {
   texto: '✏️ Resposta escrita',
 }
 
-// Cores para gráficos
-export const CHART_COLORS = [
-  '#7c3aed', '#059669', '#f59e0b', '#ef4444', '#3b82f6',
-  '#ec4899', '#14b8a6', '#f97316', '#8b5cf6', '#10b981',
-]
-
-// Perguntas base (id fixo para compatibilidade)
-export const SECCAO_BASE_IDS = {
-  catequese: 'base-s1',
-  catequistas: 'base-s2',
-  atividades: 'base-s3',
-  expectativas: 'base-s4',
-  sugestoes: 'base-s5',
+// Cores para estrelas: 1=vermelho, 2=laranja, 3=amarelo, 4=azul, 5=verde
+export const STAR_COLORS: Record<number, string> = {
+  1: '#ef4444',
+  2: '#f97316',
+  3: '#eab308',
+  4: '#3b82f6',
+  5: '#22c55e',
 }
+
+export function getStarColor(valor: number): string {
+  const v = Math.round(valor)
+  return STAR_COLORS[Math.min(5, Math.max(1, v))] ?? '#9ca3af'
+}
+
+export function getStarColorByPct(pct: number): string {
+  if (pct >= 80) return STAR_COLORS[5]
+  if (pct >= 60) return STAR_COLORS[4]
+  if (pct >= 40) return STAR_COLORS[3]
+  if (pct >= 20) return STAR_COLORS[2]
+  return STAR_COLORS[1]
+}
+
+export const CHART_COLORS = [
+  '#7c3aed','#059669','#f59e0b','#ef4444','#3b82f6',
+  '#ec4899','#14b8a6','#f97316','#8b5cf6','#10b981',
+]

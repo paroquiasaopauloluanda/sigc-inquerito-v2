@@ -135,7 +135,7 @@ export function PaginaRoot() {
                 centros={centros}
                 faixas={faixas}
                 mostrarFiltroCentro={true}
-                mostrarAbaCatequista={true}
+                
               />
             )}
 
