@@ -8,25 +8,35 @@ function devGet<T>(key: string, def: T): T {
 function devSet(key: string, val: unknown) { localStorage.setItem(key, JSON.stringify(val)) }
 
 // ── HTTP ──────────────────────────────────────────────────────────────────────
-async function req<T>(params: Record<string, string>): Promise<T> {
+// Google Apps Script não suporta CORS preflight — enviamos tudo via GET com
+// payload em base64 na query string. doGet no script trata tanto leituras como escritas.
+async function call<T = { success: boolean }>(params: Record<string, string>): Promise<T> {
   if (!APPS_SCRIPT_URL) throw new Error('No APPS_SCRIPT_URL')
-  const r = await fetch(APPS_SCRIPT_URL + '?' + new URLSearchParams(params))
+  const url = APPS_SCRIPT_URL + '?' + new URLSearchParams(params).toString()
+  const r = await fetch(url)
   const j = await r.json()
   if (j.error) throw new Error(j.error)
   return j
 }
-async function post(body: Record<string, unknown>): Promise<void> {
+
+// Para escritas: envia o payload como JSON em base64 num param GET
+// (evita o problema do no-cors que não envia o body)
+async function write(action: string, data: unknown): Promise<void> {
   if (!APPS_SCRIPT_URL) throw new Error('No APPS_SCRIPT_URL')
-  await fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify(data))))
+  const url = APPS_SCRIPT_URL + '?' + new URLSearchParams({ action, payload }).toString()
+  const r = await fetch(url)
+  // Ignora erros de CORS em respostas de escrita (Apps Script pode não devolver CORS headers)
+  try {
+    const j = await r.json()
+    if (j.error) throw new Error(j.error)
+  } catch { /* ok — no-cors write */ }
 }
 
 // ── Device ────────────────────────────────────────────────────────────────────
 const DEVICE_KEY = '_sigc_did'
 const SUBMITTED_KEY = '_sigc_submitted'
+
 export function getDeviceId(): string {
   let id = localStorage.getItem(DEVICE_KEY)
   if (!id) { id = crypto.randomUUID(); localStorage.setItem(DEVICE_KEY, id) }
@@ -34,38 +44,41 @@ export function getDeviceId(): string {
 }
 export function jaSubmeteu(): boolean { return localStorage.getItem(SUBMITTED_KEY) === '1' }
 function marcarSubmetido() { localStorage.setItem(SUBMITTED_KEY, '1') }
+
 export async function verificarDuplicado(deviceId: string): Promise<boolean> {
   if (!APPS_SCRIPT_URL) return jaSubmeteu()
-  try { return (await req<{ data: { exists: boolean } }>({ action: 'checkDevice', device_id: deviceId })).data.exists }
-  catch { return jaSubmeteu() }
+  try {
+    const r = await call<{ data: { exists: boolean } }>({ action: 'checkDevice', device_id: deviceId })
+    return r.data.exists
+  } catch { return jaSubmeteu() }
 }
 
 // ── Centros ───────────────────────────────────────────────────────────────────
 export async function getCentros(): Promise<Centro[]> {
   if (!APPS_SCRIPT_URL) return devGet<Centro[]>('_sigc_centros', [])
-  return (await req<{ data: Centro[] }>({ action: 'getCentros' })).data
+  return (await call<{ data: Centro[] }>({ action: 'getCentros' })).data
 }
 export async function saveCentro(c: Centro): Promise<void> {
   if (!APPS_SCRIPT_URL) { const l = devGet<Centro[]>('_sigc_centros', []); const i = l.findIndex(x => x.id === c.id); if (i >= 0) l[i] = c; else l.push(c); devSet('_sigc_centros', l); return }
-  await post({ action: 'saveCentro', data: c })
+  await write('saveCentro', c)
 }
 export async function deleteCentro(id: string): Promise<void> {
   if (!APPS_SCRIPT_URL) { devSet('_sigc_centros', devGet<Centro[]>('_sigc_centros', []).filter(x => x.id !== id)); return }
-  await post({ action: 'deleteCentro', data: { id } })
+  await write('deleteCentro', { id })
 }
 
 // ── Catequistas ───────────────────────────────────────────────────────────────
 export async function getCatequistas(): Promise<Catequista[]> {
   if (!APPS_SCRIPT_URL) return devGet<Catequista[]>('_sigc_catequistas', [])
-  return (await req<{ data: Catequista[] }>({ action: 'getCatequistas' })).data
+  return (await call<{ data: Catequista[] }>({ action: 'getCatequistas' })).data
 }
 export async function saveCatequista(c: Catequista): Promise<void> {
   if (!APPS_SCRIPT_URL) { const l = devGet<Catequista[]>('_sigc_catequistas', []); const i = l.findIndex(x => x.id === c.id); if (i >= 0) l[i] = c; else l.push(c); devSet('_sigc_catequistas', l); return }
-  await post({ action: 'saveCatequista', data: c })
+  await write('saveCatequista', c)
 }
 export async function deleteCatequista(id: string): Promise<void> {
   if (!APPS_SCRIPT_URL) { devSet('_sigc_catequistas', devGet<Catequista[]>('_sigc_catequistas', []).filter(x => x.id !== id)); return }
-  await post({ action: 'deleteCatequista', data: { id } })
+  await write('deleteCatequista', { id })
 }
 
 // ── Faixas ────────────────────────────────────────────────────────────────────
@@ -76,65 +89,73 @@ export async function getFaixas(): Promise<FaixaEtaria[]> {
     { id: 'f3', label: '36 – 45 anos', ordem: 3, activo: true },
     { id: 'f4', label: '46 – 60 anos', ordem: 4, activo: true },
   ])
-  return (await req<{ data: FaixaEtaria[] }>({ action: 'getFaixas' })).data
+  return (await call<{ data: FaixaEtaria[] }>({ action: 'getFaixas' })).data
 }
 export async function saveFaixa(f: FaixaEtaria): Promise<void> {
   if (!APPS_SCRIPT_URL) { const l = devGet<FaixaEtaria[]>('_sigc_faixas', []); const i = l.findIndex(x => x.id === f.id); if (i >= 0) l[i] = f; else l.push(f); devSet('_sigc_faixas', l); return }
-  await post({ action: 'saveFaixa', data: f })
+  await write('saveFaixa', f)
 }
 export async function deleteFaixa(id: string): Promise<void> {
   if (!APPS_SCRIPT_URL) { devSet('_sigc_faixas', devGet<FaixaEtaria[]>('_sigc_faixas', []).filter(x => x.id !== id)); return }
-  await post({ action: 'deleteFaixa', data: { id } })
+  await write('deleteFaixa', { id })
 }
 
 // ── Secções ───────────────────────────────────────────────────────────────────
 export async function getSeccoes(): Promise<Seccao[]> {
   if (!APPS_SCRIPT_URL) return devGet<Seccao[]>('_sigc_seccoes', getDefaultSeccoes())
-  return (await req<{ data: Seccao[] }>({ action: 'getSeccoes' })).data
+  return (await call<{ data: Seccao[] }>({ action: 'getSeccoes' })).data
 }
 export async function saveSeccao(s: Seccao): Promise<void> {
   if (!APPS_SCRIPT_URL) { const l = devGet<Seccao[]>('_sigc_seccoes', getDefaultSeccoes()); const i = l.findIndex(x => x.id === s.id); if (i >= 0) l[i] = s; else l.push(s); devSet('_sigc_seccoes', l); return }
-  await post({ action: 'saveSeccao', data: s })
+  await write('saveSeccao', s)
 }
 export async function deleteSeccao(id: string): Promise<void> {
   if (!APPS_SCRIPT_URL) { devSet('_sigc_seccoes', devGet<Seccao[]>('_sigc_seccoes', []).filter(x => x.id !== id)); return }
-  await post({ action: 'deleteSeccao', data: { id } })
+  await write('deleteSeccao', { id })
 }
 
 // ── Perguntas ─────────────────────────────────────────────────────────────────
 export async function getPerguntas(): Promise<Pergunta[]> {
   if (!APPS_SCRIPT_URL) return devGet<Pergunta[]>('_sigc_perguntas', getDefaultPerguntas())
-  return (await req<{ data: Pergunta[] }>({ action: 'getPerguntas' })).data
+  return (await call<{ data: Pergunta[] }>({ action: 'getPerguntas' })).data
 }
 export async function savePergunta(p: Pergunta): Promise<void> {
   if (!APPS_SCRIPT_URL) { const l = devGet<Pergunta[]>('_sigc_perguntas', getDefaultPerguntas()); const i = l.findIndex(x => x.id === p.id); if (i >= 0) l[i] = p; else l.push(p); devSet('_sigc_perguntas', l); return }
-  await post({ action: 'savePergunta', data: p })
+  await write('savePergunta', p)
 }
 export async function deletePergunta(id: string): Promise<void> {
   if (!APPS_SCRIPT_URL) { devSet('_sigc_perguntas', devGet<Pergunta[]>('_sigc_perguntas', []).filter(x => x.id !== id)); return }
-  await post({ action: 'deletePergunta', data: { id } })
+  await write('deletePergunta', { id })
 }
 
 // ── Perguntas desactivadas ────────────────────────────────────────────────────
 export async function getPerguntasDesactivadas(): Promise<PerguntaDesactivada[]> {
   if (!APPS_SCRIPT_URL) return devGet<PerguntaDesactivada[]>('_sigc_desactivadas', [])
-  return (await req<{ data: PerguntaDesactivada[] }>({ action: 'getPerguntasDesactivadas' })).data
+  return (await call<{ data: PerguntaDesactivada[] }>({ action: 'getPerguntasDesactivadas' })).data
 }
 export async function savePerguntasDesactivadas(centro_id: string, pergunta_ids: string[]): Promise<void> {
-  if (!APPS_SCRIPT_URL) { const all = devGet<PerguntaDesactivada[]>('_sigc_desactivadas', []).filter(x => x.centro_id !== centro_id); pergunta_ids.forEach(pid => all.push({ centro_id, pergunta_id: pid })); devSet('_sigc_desactivadas', all); return }
-  await post({ action: 'savePerguntasDesactivadas', data: { centro_id, pergunta_ids } })
+  if (!APPS_SCRIPT_URL) {
+    const all = devGet<PerguntaDesactivada[]>('_sigc_desactivadas', []).filter(x => x.centro_id !== centro_id)
+    pergunta_ids.forEach(pid => all.push({ centro_id, pergunta_id: pid }))
+    devSet('_sigc_desactivadas', all)
+    return
+  }
+  await write('savePerguntasDesactivadas', { centro_id, pergunta_ids })
 }
 
 // ── Respostas ─────────────────────────────────────────────────────────────────
 export async function submeterResposta(r: Omit<Resposta, 'id' | 'device_id' | 'timestamp'>): Promise<void> {
   const payload: Resposta = { ...r, id: crypto.randomUUID(), device_id: getDeviceId(), timestamp: new Date().toISOString() }
-  if (!APPS_SCRIPT_URL) { const l = devGet<Resposta[]>('_sigc_respostas', []); l.push(payload); devSet('_sigc_respostas', l); marcarSubmetido(); return }
-  await post({ action: 'submitResposta', data: payload })
+  if (!APPS_SCRIPT_URL) {
+    const l = devGet<Resposta[]>('_sigc_respostas', [])
+    l.push(payload); devSet('_sigc_respostas', l); marcarSubmetido(); return
+  }
+  await write('submitResposta', payload)
   marcarSubmetido()
 }
 export async function getRespostas(): Promise<Resposta[]> {
   if (!APPS_SCRIPT_URL) return devGet<Resposta[]>('_sigc_respostas', [])
-  return (await req<{ data: Resposta[] }>({ action: 'getRespostas' })).data
+  return (await call<{ data: Resposta[] }>({ action: 'getRespostas' })).data
 }
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
