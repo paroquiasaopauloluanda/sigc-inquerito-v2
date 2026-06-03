@@ -60,10 +60,20 @@ export function filtrarRespostas(respostas: Resposta[], filtros: { centro_id?: s
   })
 }
 
+// Normaliza centro_id: '' ou undefined -> null (Google Sheets devolve '' para campos vazios)
+function normCentro(v: string | null | undefined): string | null {
+  return v === '' || v == null ? null : v
+}
+
 export function getPerguntasParaCentro(perguntas: Pergunta[], seccoes: Seccao[], centro_id: string, desactivadas: string[]): { seccao: Seccao; perguntas: Pergunta[] }[] {
-  const permitidas = perguntas.filter(p => (p.centro_id === null || p.centro_id === centro_id) && !desactivadas.includes(p.id))
+  const permitidas = perguntas.filter(p => {
+    const cid = normCentro(p.centro_id)
+    if (cid !== null && cid !== centro_id) return false
+    if (desactivadas.includes(p.id)) return false
+    return true
+  })
   return seccoes
-    .filter(s => s.centro_id === null || s.centro_id === centro_id)
+    .filter(s => normCentro(s.centro_id) === null || s.centro_id === centro_id)
     .sort((a, b) => a.ordem - b.ordem)
     .map(s => ({ seccao: s, perguntas: permitidas.filter(p => p.seccao_id === s.id).sort((a, b) => a.ordem - b.ordem) }))
     .filter(s => s.perguntas.length > 0)

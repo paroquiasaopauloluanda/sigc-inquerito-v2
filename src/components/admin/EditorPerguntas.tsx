@@ -101,7 +101,8 @@ export function EditorPerguntas({ seccoes, perguntas, centro_id, soLeitura, desa
             {psBase.map(p => (
               <PerguntaItem key={p.id} pergunta={p} isBase={true}
                 desactivada={desactivadas.includes(p.id)}
-                soLeitura={soLeitura || centro_id !== null}
+                soLeitura={soLeitura}
+                isRoot={centro_id === null}
                 onEdit={() => setModalPergunta({ ...p })}
                 onDelete={() => onDeletePergunta(p.id)}
                 onToggle={onToggleDesactivada ? () => onToggleDesactivada(p.id, desactivadas.includes(p.id)) : undefined}
@@ -254,15 +255,37 @@ export function EditorPerguntas({ seccoes, perguntas, centro_id, soLeitura, desa
 }
 
 // ── PerguntaItem ──────────────────────────────────────────────────────────────
-function PerguntaItem({ pergunta, isBase, desactivada, soLeitura, onEdit, onDelete, onToggle }: {
-  pergunta: Pergunta; isBase: boolean; desactivada: boolean; soLeitura?: boolean
+function PerguntaItem({ pergunta, isBase, desactivada, soLeitura, isRoot, onEdit, onDelete, onToggle }: {
+  pergunta: Pergunta; isBase: boolean; desactivada: boolean; soLeitura?: boolean; isRoot?: boolean
   onEdit: () => void; onDelete: () => void; onToggle?: () => void
 }) {
   return (
     <div style={{ padding: '11px 14px', borderTop: '1px solid var(--gray-100)', display: 'flex', alignItems: 'flex-start', gap: 10, opacity: desactivada ? .45 : 1, background: desactivada ? 'var(--gray-50)' : '#fff' }}>
       {onToggle && (
-        <input type="checkbox" checked={!desactivada} onChange={onToggle}
-          style={{ width: 17, height: 17, accentColor: 'var(--purple-600)', marginTop: 2, flexShrink: 0 }} />
+        <button
+          type="button"
+          onClick={onToggle}
+          style={{
+            flexShrink: 0, marginTop: 1,
+            width: 44, height: 44,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'none', border: 'none', cursor: 'pointer',
+            borderRadius: 8,
+            WebkitTapHighlightColor: 'transparent',
+          }}
+          aria-label={desactivada ? 'Activar pergunta' : 'Desactivar pergunta'}
+        >
+          <span style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 22, height: 22, borderRadius: 6,
+            border: `2.5px solid ${!desactivada ? 'var(--purple-600)' : 'var(--gray-300)'}`,
+            background: !desactivada ? 'var(--purple-600)' : '#fff',
+            transition: 'all .15s',
+            fontSize: 14,
+          }}>
+            {!desactivada && <span style={{ color: '#fff', fontWeight: 800, lineHeight: 1 }}>✓</span>}
+          </span>
+        </button>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '0.88rem', color: 'var(--gray-800)', marginBottom: 4, lineHeight: 1.5 }}>{pergunta.texto}</div>
@@ -272,7 +295,7 @@ function PerguntaItem({ pergunta, isBase, desactivada, soLeitura, onEdit, onDele
           {isBase && <Badge color="purple">Base</Badge>}
         </div>
       </div>
-      {!soLeitura && !isBase && (
+      {!soLeitura && (isRoot || !isBase) && (
         <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
           <Btn size="sm" variant="ghost" onClick={onEdit}>✏️</Btn>
           <Btn size="sm" variant="danger" onClick={onDelete}>🗑️</Btn>
