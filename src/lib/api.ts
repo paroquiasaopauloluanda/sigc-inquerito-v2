@@ -19,18 +19,29 @@ async function call<T = { success: boolean }>(params: Record<string, string>): P
   return j
 }
 
-// Para escritas: envia o payload como JSON em base64 num param GET
-// (evita o problema do no-cors que não envia o body)
+// Para escritas: envia via GET com payload JSON codificado em base64url
+// base64url usa - e _ em vez de + e / e sem = no fim — seguro em query strings
+function toBase64Url(str: string): string {
+  return btoa(unescape(encodeURIComponent(str)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '')
+}
+
 async function write(action: string, data: unknown): Promise<void> {
   if (!APPS_SCRIPT_URL) throw new Error('No APPS_SCRIPT_URL')
-  const payload = btoa(unescape(encodeURIComponent(JSON.stringify(data))))
-  const url = APPS_SCRIPT_URL + '?' + new URLSearchParams({ action, payload }).toString()
-  const r = await fetch(url)
-  // Ignora erros de CORS em respostas de escrita (Apps Script pode não devolver CORS headers)
+  const payload = toBase64Url(JSON.stringify(data))
+  // Usa encodeURIComponent explícito para garantir que - e _ não são alterados
+  const url = `${APPS_SCRIPT_URL}?action=${encodeURIComponent(action)}&payload=${payload}`
   try {
+    const r = await fetch(url)
     const j = await r.json()
     if (j.error) throw new Error(j.error)
-  } catch { /* ok — no-cors write */ }
+  } catch (e) {
+    // Apps Script às vezes não devolve CORS headers em escritas — se chegou ao servidor é suficiente
+    // Só relança se for um erro de rede real (não CORS)
+    if (e instanceof TypeError && e.message.includes('fetch')) throw e
+  }
 }
 
 // ── Device ────────────────────────────────────────────────────────────────────

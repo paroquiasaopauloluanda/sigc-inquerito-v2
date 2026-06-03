@@ -34,10 +34,13 @@ function doGet(e) {
     if (action === 'getRespostas') return ok(getRespostas())
     if (action === 'checkDevice')  return ok({ exists: checkDevice(e.parameter.device_id) })
 
-    // ── Escritas via GET + payload base64 ──────────────────────────────────
+    // ── Escritas via GET + payload base64url ──────────────────────────────
     const raw = e.parameter.payload
     if (!raw) return err('Payload em falta')
-    const data = JSON.parse(decodeURIComponent(escape(Utilities.newBlob(Utilities.base64Decode(raw)).getDataAsString())))
+    // base64url → base64 standard: substituir - por + e _ por / e adicionar padding
+    const b64 = raw.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = b64 + '==='.slice(0, (4 - b64.length % 4) % 4)
+    const data = JSON.parse(Utilities.newBlob(Utilities.base64Decode(padded)).getDataAsString())
 
     if (action === 'saveCentro')    { upsert('Centros', centrosCols(), data); return ok({ success: true }) }
     if (action === 'deleteCentro')  { deleteRow('Centros', data.id); return ok({ success: true }) }
@@ -116,9 +119,10 @@ function getSheet(name, cols) {
   const sh = ensureSheet(name, cols)
   if (sh.getLastRow() < 2) return []
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, cols.length).getValues()
+  const firstCol = cols[0]  // usa a primeira coluna como chave de filtragem (pode ser 'id', 'centro_id', etc.)
   return rows
     .map(r => { const obj = {}; cols.forEach((c, i) => obj[c] = r[i]); return obj })
-    .filter(r => r.id)
+    .filter(r => r[firstCol] && String(r[firstCol]).trim() !== '')
 }
 
 function rowToObj(r) { return r }
