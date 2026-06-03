@@ -19,9 +19,10 @@ interface Props {
   centros: Centro[]
   faixas: FaixaEtaria[]
   mostrarFiltroCentro?: boolean
+  centroFixo?: string  // quando admin — centro já fixo, passado à AnaliseTab
 }
 
-export function StatsDashboard({ respostas, perguntas, seccoes, catequistas, centros, faixas, mostrarFiltroCentro = false }: Props) {
+export function StatsDashboard({ respostas, perguntas, seccoes, catequistas, centros, faixas, mostrarFiltroCentro = false, centroFixo }: Props) {
   const [tab, setTab] = useState('geral')
   const [filtroCentro, setFiltroCentro] = useState('todas')
   const [filtroCatequista, setFiltroCatequista] = useState('')
@@ -335,7 +336,17 @@ export function StatsDashboard({ respostas, perguntas, seccoes, catequistas, cen
       )}
 
       {/* ── Tab: Análise ── */}
-      {tab === 'analise' && <AnaliseTab analise={analise} />}
+      {tab === 'analise' && (
+        <AnaliseTab
+          respostas={respostas}
+          perguntas={perguntas}
+          centros={centros}
+          catequistas={catequistas}
+          faixas={faixas}
+          mostrarFiltroCentro={mostrarFiltroCentro}
+          centroFixo={centroFixo}
+        />
+      )}
     </div>
   )
 }
@@ -400,8 +411,137 @@ function PerguntaStats({ pergunta: p, stats, respostas }: { pergunta: Pergunta; 
   return null
 }
 
+// ── SearchableDropdown ────────────────────────────────────────────────────────
+function SearchableDropdown({ label, value, onChange, options, placeholder }: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+  placeholder: string
+}) {
+  const [search, setSearch] = React.useState('')
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+  const selected = options.find(o => o.value === value)
+
+  React.useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  const filtered = options.filter(o => !search || o.label.toLowerCase().includes(search.toLowerCase()))
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flex: '1 1 160px', minWidth: 0 }}>
+      <label style={{ fontSize: '0.82rem', fontWeight: 500, color: 'var(--gray-600)', display: 'block', marginBottom: 4 }}>{label}</label>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', padding: '9px 12px', borderRadius: 10, border: '1.5px solid var(--gray-200)',
+          background: '#fff', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+          fontSize: '0.88rem', color: selected ? 'var(--gray-800)' : 'var(--gray-400)',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <span style={{ flexShrink: 0, color: 'var(--gray-400)', fontSize: 11, marginLeft: 4 }}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
+          background: '#fff', borderRadius: 10, border: '1.5px solid var(--gray-200)',
+          boxShadow: '0 8px 24px rgba(0,0,0,.12)', marginTop: 4, overflow: 'hidden',
+        }}>
+          <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--gray-100)' }}>
+            <input
+              autoFocus
+              value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="🔍 Pesquisar…"
+              style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1.5px solid var(--gray-200)', fontFamily: 'inherit', fontSize: '0.85rem', outline: 'none' }}
+            />
+          </div>
+          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            {filtered.map(o => (
+              <button
+                key={o.value} type="button"
+                onClick={() => { onChange(o.value); setOpen(false); setSearch('') }}
+                style={{
+                  width: '100%', padding: '10px 14px', border: 'none', textAlign: 'left',
+                  background: o.value === value ? 'var(--purple-50)' : '#fff',
+                  color: o.value === value ? 'var(--purple-700)' : 'var(--gray-700)',
+                  fontWeight: o.value === value ? 600 : 400, fontSize: '0.88rem',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {o.label}
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: '12px 14px', color: 'var(--gray-400)', fontSize: '0.85rem', textAlign: 'center' }}>
+                Nenhum resultado
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── AnaliseTab ────────────────────────────────────────────────────────────────
-function AnaliseTab({ analise }: { analise: RelatorioAnalise }) {
+interface AnaliseTabProps {
+  respostas: Resposta[]
+  perguntas: Pergunta[]
+  centros: Centro[]
+  catequistas: Catequista[]
+  faixas: FaixaEtaria[]
+  mostrarFiltroCentro: boolean
+  // quando vem do admin, o centro já está fixo
+  centroFixo?: string
+}
+
+function AnaliseTab({ respostas, perguntas, centros, catequistas, faixas, mostrarFiltroCentro, centroFixo }: AnaliseTabProps) {
+  const [filtroCentro, setFiltroCentro] = React.useState(centroFixo ?? 'todas')
+  const [filtroCatequista, setFiltroCatequista] = React.useState('')
+
+  // Catequistas disponíveis conforme centro seleccionado
+  const catDisponiveis = filtroCentro === 'todas'
+    ? catequistas
+    : catequistas.filter(c => c.centros_ids.includes(filtroCentro))
+
+  // Filtrar respostas
+  const respostasFiltradas = React.useMemo(() => {
+    return respostas.filter(r => {
+      if (filtroCentro !== 'todas' && r.centro_id !== filtroCentro) return false
+      if (filtroCatequista && !getCatequistasIds(r).includes(filtroCatequista)) return false
+      return true
+    })
+  }, [respostas, filtroCentro, filtroCatequista])
+
+  const analise = gerarAnalise(
+    calcularEstatisticas(respostasFiltradas, perguntas),
+    perguntas, centros, catequistas, faixas
+  )
+
+  // Label do âmbito da análise
+  const scopeLabel = React.useMemo(() => {
+    if (filtroCatequista) {
+      const cat = catequistas.find(c => c.id === filtroCatequista)
+      return { texto: `Catequista: ${cat?.nome ?? filtroCatequista}`, cor: '#059669', bg: '#ecfdf5', border: '#a7f3d0', icon: '👤' }
+    }
+    if (filtroCentro !== 'todas') {
+      const ctr = centros.find(c => c.id === filtroCentro)
+      return { texto: `Centro: ${ctr?.nome ?? filtroCentro}`, cor: '#0891b2', bg: '#ecfeff', border: '#a5f3fc', icon: '🏛️' }
+    }
+    return { texto: 'Geral — todos os dados', cor: 'var(--purple-700)', bg: 'var(--purple-50)', border: 'var(--purple-200)', icon: '🌐' }
+  }, [filtroCentro, filtroCatequista, centros, catequistas])
+
   const corScore = analise.score_global >= 80 ? '#22c55e' : analise.score_global >= 60 ? '#3b82f6' : analise.score_global >= 40 ? '#eab308' : '#ef4444'
   const tipoColors: Record<string, { bg: string; border: string; icon: string }> = {
     positivo: { bg: '#f0fdf4', border: '#86efac', icon: '✅' },
@@ -412,9 +552,78 @@ function AnaliseTab({ analise }: { analise: RelatorioAnalise }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* Filtros da análise */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid var(--gray-200)', padding: '14px' }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--gray-500)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: .5 }}>
+          Âmbito da análise
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' as const, alignItems: 'flex-end' }}>
+          {/* Filtro de centro (só no root) */}
+          {mostrarFiltroCentro && !centroFixo && (
+            <SearchableDropdown
+              label="Centro"
+              value={filtroCentro}
+              onChange={v => { setFiltroCentro(v); setFiltroCatequista('') }}
+              placeholder="Todos os centros"
+              options={[
+                { value: 'todas', label: `Todos os centros (${respostas.length} resp.)` },
+                ...centros.map(c => ({
+                  value: c.id,
+                  label: `${c.nome} (${respostas.filter(r => r.centro_id === c.id).length} resp.)`,
+                })),
+              ]}
+            />
+          )}
+
+          {/* Filtro de catequista */}
+          <SearchableDropdown
+            label="Catequista"
+            value={filtroCatequista}
+            onChange={setFiltroCatequista}
+            placeholder="Todos os catequistas"
+            options={[
+              { value: '', label: 'Todos os catequistas' },
+              ...catDisponiveis.map(c => ({
+                value: c.id,
+                label: `${c.nome} (${respostas.filter(r => getCatequistasIds(r).includes(c.id) && (filtroCentro === 'todas' || r.centro_id === filtroCentro)).length} resp.)`,
+              })),
+            ]}
+          />
+
+          {/* Botão limpar */}
+          {(filtroCentro !== 'todas' || filtroCatequista) && (
+            <button
+              type="button"
+              onClick={() => { setFiltroCentro(centroFixo ?? 'todas'); setFiltroCatequista('') }}
+              style={{ padding: '9px 14px', borderRadius: 10, border: '1.5px solid var(--gray-200)', background: '#fff', color: 'var(--gray-500)', fontSize: '0.82rem', cursor: 'pointer', fontFamily: 'inherit', alignSelf: 'flex-end' }}
+            >
+              ✕ Limpar
+            </button>
+          )}
+        </div>
+
+        {/* Badge do âmbito activo */}
+        <div style={{
+          marginTop: 12, padding: '8px 12px', borderRadius: 8,
+          background: scopeLabel.bg, border: `1px solid ${scopeLabel.border}`,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
+          <span style={{ fontSize: 16 }}>{scopeLabel.icon}</span>
+          <div>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: scopeLabel.cor }}>
+              A mostrar: {scopeLabel.texto}
+            </span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--gray-400)', marginLeft: 8 }}>
+              ({respostasFiltradas.length} resposta{respostasFiltradas.length !== 1 ? 's' : ''})
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Score global */}
       <div style={{ background: '#fff', borderRadius: 14, border: '1px solid var(--gray-200)', padding: 16, textAlign: 'center' }}>
-        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 6 }}>Score global de satisfação</div>
+        <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 6 }}>Score de satisfação</div>
         <div style={{ fontSize: '3rem', fontWeight: 900, color: corScore, lineHeight: 1 }}>{analise.score_global > 0 ? `${analise.score_global}%` : '—'}</div>
         <div style={{ fontSize: '0.85rem', color: 'var(--gray-500)', marginTop: 8, lineHeight: 1.6 }}>{analise.resumo_geral}</div>
       </div>

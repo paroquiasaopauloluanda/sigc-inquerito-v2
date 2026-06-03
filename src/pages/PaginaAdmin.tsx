@@ -199,11 +199,11 @@ export function PaginaAdmin() {
           respostas={respostasCentro}
           perguntas={perguntasParaCentro}
           seccoes={seccoes}
-          catequistas={catequistas.filter(c => c.centros_ids.includes(sessao.centro_id))}
+          catequistas={catequistas.filter(c => c.centros_ids.includes(sessao!.centro_id))}
           centros={centros}
           faixas={faixas}
           mostrarFiltroCentro={false}
-          
+          centroFixo={sessao!.centro_id}
         />
       )}
 
